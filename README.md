@@ -40,3 +40,46 @@ Multi-user authentication
 Case management integration
 AI-powered knowledge retrieval
 Secure cloud deployment
+
+---
+
+## Getting Started
+
+### 1. Install dependencies
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Add your Groq API key
+Get a free key at https://console.groq.com/keys, then either:
+```bash
+export GROQ_API_KEY="gsk_your_key_here"
+```
+or copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill it in.
+
+### 3. Run
+```bash
+streamlit run ui.py
+```
+The app opens at http://localhost:8501. Pick a language in the sidebar and start chatting.
+
+## Project Structure
+```
+backend.py            # Groq calls + prompt building (pure logic, no Streamlit)
+storage.py            # Conversation data model + JSON persistence seam
+ui.py                 # Streamlit app (the only module that imports streamlit)
+.streamlit/
+    config.toml       # Theme / server config
+    secrets.toml      # Your API key (gitignored; see .example)
+requirements.txt
+```
+Design note: AI logic, persistence, and UI are kept in separate modules so later
+milestones (history, sidebar, streaming, theming) extend the code instead of
+rewriting it.
+
+## Milestone Status
+- **M1 — Core Chatbot MVP:** complete (project structure, Groq backend, chat UI, language selector)
+- **M2 — Conversation Management:** planned
+- **M3 — UI/UX Enhancement:** planned

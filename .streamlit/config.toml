@@ -1,0 +1,11 @@
+# Streamlit configuration.
+# Theme lives here (not as scattered inline CSS) so Milestone 3 / Issue #10
+# (dark mode) and Issue #12 (mobile) extend this single file instead of
+# sprinkling unsafe_allow_html everywhere.
+
+[theme]
+primaryColor = "#2563eb"        # URDP-aligned blue (refined in M3 / Issue #9)
+base = "light"                  # M3 / Issue #10 will add a dark option
+
+[server]
+headless = true
