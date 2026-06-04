@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets & local config
+.env
+.streamlit/secrets.toml
+
+# Local conversation store (Milestone 2)
+data/
+conversations.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local planning notes (not part of the product)
+MILESTONES.md
