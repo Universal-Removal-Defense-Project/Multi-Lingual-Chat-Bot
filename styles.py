@@ -72,3 +72,19 @@ def theme_css(theme: str = DEFAULT_THEME) -> str:
   }}
 </style>
 """
+
+
+def rtl_css(enabled: bool) -> str:
+    """Return a <style> block that flips chat text to right-to-left (Issue #18).
+
+    Applied only when the active language uses an RTL script; empty otherwise so
+    left-to-right languages are unaffected.
+    """
+    if not enabled:
+        return ""
+    return """
+<style>
+  [data-testid="stChatMessage"] { direction: rtl; text-align: right; }
+  [data-testid="stChatInput"] textarea { direction: rtl; text-align: right; }
+</style>
+"""

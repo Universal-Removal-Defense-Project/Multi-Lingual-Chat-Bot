@@ -85,3 +85,4 @@ rewriting it.
 - **M1 — Core Chatbot MVP:** complete (project structure, Groq backend, chat UI, language selector)
 - **M2 — Conversation Management:** complete (persistent history, new chat, sidebar, rename/delete)
 - **M3 — UI/UX Enhancement:** complete (URDP branding, light/dark toggle, streaming, mobile styling)
+- **M4 — Translation Engine Expansion:** complete (29 languages, auto-detection, RTL support)

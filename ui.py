@@ -78,19 +78,35 @@ def init_state() -> None:
         "active_id" not in st.session_state
         or st.session_state.active_id not in st.session_state.conversations
     ):
-        st.session_state.active_id = most_recent_id()
-    st.session_state.setdefault("theme", styles.DEFAULT_THEME)
+        set_active(most_recent_id())
+    st.session_state.setdefault("dark_mode", styles.DEFAULT_THEME == "dark")
+    st.session_state.setdefault("auto_detect", False)
 
 
 def active_conversation() -> dict:
     return st.session_state.conversations[st.session_state.active_id]
 
 
+def label_for_language(name: str) -> str:
+    """Return the dropdown label for a language name (falls back to English)."""
+    return next(
+        (lbl for lbl, n in backend.SUPPORTED_LANGUAGES.items() if n == name),
+        "English",
+    )
+
+
+def set_active(cid: str) -> None:
+    """Switch the active conversation. The language dropdown re-syncs on the next
+    render (see render_sidebar), because a widget key cannot be written after the
+    widget is instantiated."""
+    st.session_state.active_id = cid
+
+
 def start_new_chat() -> None:
     """Create a new conversation and make it active, keeping existing chats."""
     conv = storage.new_conversation(language=backend.DEFAULT_LANGUAGE)
     st.session_state.conversations[conv["id"]] = conv
-    st.session_state.active_id = conv["id"]
+    set_active(conv["id"])
     persist()
 
 
@@ -101,11 +117,19 @@ def delete_conversation(cid: str) -> None:
         start_new_chat()
         return
     if st.session_state.active_id == cid:
-        st.session_state.active_id = most_recent_id()
+        set_active(most_recent_id())
     persist()
 
 
 # --- Sidebar ---
+
+def _on_language_change() -> None:
+    """Apply a manual language pick from the dropdown to the active conversation."""
+    active_conversation()["language"] = backend.SUPPORTED_LANGUAGES[
+        st.session_state.lang_select
+    ]
+    persist()
+
 
 def render_sidebar(conversation: dict) -> None:
     with st.sidebar:
@@ -115,21 +139,27 @@ def render_sidebar(conversation: dict) -> None:
             start_new_chat()
             st.rerun()
 
-        labels = list(backend.SUPPORTED_LANGUAGES.keys())
-        current_label = next(
-            (lbl for lbl, lang in backend.SUPPORTED_LANGUAGES.items()
-             if lang == conversation["language"]),
-            "English",
+        # Auto-detect language from the user's message (Issue #17). When off,
+        # the dropdown is the manual override.
+        auto = st.toggle(
+            "🌐 Auto-detect language",
+            key="auto_detect",
+            help="Detect the language from your message and reply in it.",
         )
-        chosen = st.selectbox(
+
+        # Sync the dropdown to the active conversation's language before the
+        # widget is created (writing a widget key after creation is disallowed).
+        st.session_state.lang_select = label_for_language(conversation["language"])
+        st.selectbox(
             "Response language",
-            labels,
-            index=labels.index(current_label),
+            list(backend.SUPPORTED_LANGUAGES.keys()),
+            key="lang_select",
+            on_change=_on_language_change,
+            disabled=auto,
             help="The assistant will reply in this language.",
         )
-        if backend.SUPPORTED_LANGUAGES[chosen] != conversation["language"]:
-            conversation["language"] = backend.SUPPORTED_LANGUAGES[chosen]
-            persist()
+        if auto:
+            st.caption(f"Detected: {conversation['language']}")
 
         st.divider()
         _render_conversation_list()
@@ -137,8 +167,7 @@ def render_sidebar(conversation: dict) -> None:
         _render_rename(conversation)
 
         st.divider()
-        dark = st.toggle("🌙 Dark mode", value=(st.session_state.theme == "dark"))
-        st.session_state.theme = "dark" if dark else "light"
+        st.toggle("🌙 Dark mode", key="dark_mode")
 
 
 def _render_conversation_list() -> None:
@@ -160,7 +189,7 @@ def _render_conversation_list() -> None:
             use_container_width=True,
             type="primary" if is_active else "secondary",
         ):
-            st.session_state.active_id = cid
+            set_active(cid)
             st.rerun()
         if del_col.button("🗑", key=f"del_{cid}", help="Delete this conversation"):
             st.session_state.pending_delete = cid
@@ -222,6 +251,15 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Auto-detect the response language from the message (Issue #17).
+    if st.session_state.get("auto_detect") and api_key:
+        try:
+            detected = backend.detect_language(prompt, api_key=api_key)
+            if detected:
+                conversation["language"] = detected
+        except backend.BackendError:
+            pass  # detection is best-effort; keep the current language
+
     with st.chat_message("assistant"):
         if not api_key:
             reply = (
@@ -257,7 +295,13 @@ def main() -> None:
 
     render_sidebar(conversation)
     # Inject theme CSS after the sidebar so the toggle applies in the same run.
-    st.markdown(styles.theme_css(st.session_state.theme), unsafe_allow_html=True)
+    theme = "dark" if st.session_state.dark_mode else "light"
+    st.markdown(styles.theme_css(theme), unsafe_allow_html=True)
+    # Flip to right-to-left when the active language needs it (Issue #18).
+    st.markdown(
+        styles.rtl_css(backend.is_rtl(conversation["language"])),
+        unsafe_allow_html=True,
+    )
 
     st.title("🌐 URDP Multi-Lingual Assistant")
     st.caption("Ask anything — I'll reply in your selected language.")
