@@ -68,8 +68,10 @@ The app opens at http://localhost:8501. Pick a language in the sidebar and start
 ## Project Structure
 ```
 backend.py            # Groq calls + prompt building (pure logic, no Streamlit)
-storage.py            # Conversation data model + JSON persistence seam
+storage.py            # Conversation data model + JSON persistence
+styles.py             # Centralised theme CSS (light/dark + mobile)
 ui.py                 # Streamlit app (the only module that imports streamlit)
+assets/               # Optional: drop logo.png here to show a brand logo
 .streamlit/
     config.toml       # Theme / server config
     secrets.toml      # Your API key (gitignored; see .example)
@@ -82,4 +84,4 @@ rewriting it.
 ## Milestone Status
 - **M1 — Core Chatbot MVP:** complete (project structure, Groq backend, chat UI, language selector)
 - **M2 — Conversation Management:** complete (persistent history, new chat, sidebar, rename/delete)
-- **M3 — UI/UX Enhancement:** planned
+- **M3 — UI/UX Enhancement:** complete (URDP branding, light/dark toggle, streaming, mobile styling)

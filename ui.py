@@ -16,12 +16,25 @@ import streamlit as st
 
 import backend
 import storage
+import styles
 
 st.set_page_config(
     page_title="URDP Multi-Lingual Assistant",
     page_icon="🌐",
     layout="centered",
 )
+
+# Optional brand logo. Drop a file here to have it shown automatically.
+LOGO_PATH = "assets/logo.png"
+
+
+def render_brand() -> None:
+    """Render the URDP brand mark: logo image if present, else a text mark."""
+    if os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, use_container_width=True)
+    else:
+        st.markdown("### 🌐 URDP")
+    st.caption("Multi-Lingual Assistant · Language should never be a barrier.")
 
 
 def get_api_key() -> str | None:
@@ -66,6 +79,7 @@ def init_state() -> None:
         or st.session_state.active_id not in st.session_state.conversations
     ):
         st.session_state.active_id = most_recent_id()
+    st.session_state.setdefault("theme", styles.DEFAULT_THEME)
 
 
 def active_conversation() -> dict:
@@ -95,8 +109,7 @@ def delete_conversation(cid: str) -> None:
 
 def render_sidebar(conversation: dict) -> None:
     with st.sidebar:
-        st.markdown("### 🌐 URDP Assistant")
-        st.caption("Language should never be a barrier.")
+        render_brand()
 
         if st.button("➕ New chat", use_container_width=True):
             start_new_chat()
@@ -122,6 +135,10 @@ def render_sidebar(conversation: dict) -> None:
         _render_conversation_list()
         _render_delete_confirmation()
         _render_rename(conversation)
+
+        st.divider()
+        dark = st.toggle("🌙 Dark mode", value=(st.session_state.theme == "dark"))
+        st.session_state.theme = "dark" if dark else "light"
 
 
 def _render_conversation_list() -> None:
@@ -237,6 +254,8 @@ def main() -> None:
     conversation = active_conversation()
 
     render_sidebar(conversation)
+    # Inject theme CSS after the sidebar so the toggle applies in the same run.
+    st.markdown(styles.theme_css(st.session_state.theme), unsafe_allow_html=True)
 
     st.title("🌐 URDP Multi-Lingual Assistant")
     st.caption("Ask anything — I'll reply in your selected language.")
