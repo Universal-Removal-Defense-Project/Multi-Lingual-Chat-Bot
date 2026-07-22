@@ -2,7 +2,8 @@
 
 This is the only module that imports Streamlit. AI logic lives in backend.py
 and the conversation data model in storage.py. Conversations are keyed by id in
-session_state, so the app supports multiple conversations.
+session_state and persisted to disk, so history survives page refreshes and the
+user can keep, switch between, rename, and delete multiple conversations.
 
 Run with: streamlit run ui.py
 """
@@ -37,30 +38,71 @@ def get_api_key() -> str | None:
     return os.environ.get("GROQ_API_KEY")
 
 
+# --- Session state and persistence ---
+
+def persist() -> None:
+    """Write the current conversations to disk."""
+    storage.save_conversations(st.session_state.conversations)
+
+
+def most_recent_id() -> str:
+    """Return the id of the most recently created conversation."""
+    return max(
+        st.session_state.conversations,
+        key=lambda cid: st.session_state.conversations[cid]["created_at"],
+    )
+
+
 def init_state() -> None:
-    """Initialise session state with an active conversation."""
+    """Load persisted conversations and select an active one."""
     if "conversations" not in st.session_state:
-        st.session_state.conversations = {}
-    if "active_id" not in st.session_state or (
-        st.session_state.active_id not in st.session_state.conversations
-    ):
+        st.session_state.conversations = storage.load_conversations()
+    if not st.session_state.conversations:
         conv = storage.new_conversation(language=backend.DEFAULT_LANGUAGE)
         st.session_state.conversations[conv["id"]] = conv
-        st.session_state.active_id = conv["id"]
+        persist()
+    if (
+        "active_id" not in st.session_state
+        or st.session_state.active_id not in st.session_state.conversations
+    ):
+        st.session_state.active_id = most_recent_id()
 
 
 def active_conversation() -> dict:
     return st.session_state.conversations[st.session_state.active_id]
 
 
+def start_new_chat() -> None:
+    """Create a new conversation and make it active, keeping existing chats."""
+    conv = storage.new_conversation(language=backend.DEFAULT_LANGUAGE)
+    st.session_state.conversations[conv["id"]] = conv
+    st.session_state.active_id = conv["id"]
+    persist()
+
+
+def delete_conversation(cid: str) -> None:
+    """Delete a conversation, ensuring one active conversation always remains."""
+    st.session_state.conversations.pop(cid, None)
+    if not st.session_state.conversations:
+        start_new_chat()
+        return
+    if st.session_state.active_id == cid:
+        st.session_state.active_id = most_recent_id()
+    persist()
+
+
+# --- Sidebar ---
+
 def render_sidebar(conversation: dict) -> None:
-    """Render the sidebar with the response-language selector."""
     with st.sidebar:
         st.markdown("### 🌐 URDP Assistant")
         st.caption("Language should never be a barrier.")
 
+        if st.button("➕ New chat", use_container_width=True):
+            start_new_chat()
+            st.rerun()
+
         labels = list(backend.SUPPORTED_LANGUAGES.keys())
-        # Keep the dropdown in sync with the language stored on the conversation.
         current_label = next(
             (lbl for lbl, lang in backend.SUPPORTED_LANGUAGES.items()
              if lang == conversation["language"]),
@@ -72,8 +114,76 @@ def render_sidebar(conversation: dict) -> None:
             index=labels.index(current_label),
             help="The assistant will reply in this language.",
         )
-        conversation["language"] = backend.SUPPORTED_LANGUAGES[chosen]
+        if backend.SUPPORTED_LANGUAGES[chosen] != conversation["language"]:
+            conversation["language"] = backend.SUPPORTED_LANGUAGES[chosen]
+            persist()
 
+        st.divider()
+        _render_conversation_list()
+        _render_delete_confirmation()
+        _render_rename(conversation)
+
+
+def _render_conversation_list() -> None:
+    """List conversations (newest first); clicking one switches to it."""
+    st.caption("Conversations")
+    conversations = st.session_state.conversations
+    ordered = sorted(
+        conversations,
+        key=lambda cid: conversations[cid]["created_at"],
+        reverse=True,
+    )
+    for cid in ordered:
+        title = storage.derive_title(conversations[cid])
+        is_active = cid == st.session_state.active_id
+        row, del_col = st.columns([0.82, 0.18])
+        if row.button(
+            title,
+            key=f"open_{cid}",
+            use_container_width=True,
+            type="primary" if is_active else "secondary",
+        ):
+            st.session_state.active_id = cid
+            st.rerun()
+        if del_col.button("🗑", key=f"del_{cid}", help="Delete this conversation"):
+            st.session_state.pending_delete = cid
+            st.rerun()
+
+
+def _render_delete_confirmation() -> None:
+    """Confirm before deleting, so chats are not removed accidentally."""
+    cid = st.session_state.get("pending_delete")
+    if not cid or cid not in st.session_state.conversations:
+        st.session_state.pop("pending_delete", None)
+        return
+    title = storage.derive_title(st.session_state.conversations[cid])
+    st.warning(f"Delete “{title}”? This cannot be undone.")
+    confirm_col, cancel_col = st.columns(2)
+    if confirm_col.button("Delete", key="confirm_delete", type="primary", use_container_width=True):
+        delete_conversation(cid)
+        st.session_state.pop("pending_delete", None)
+        st.rerun()
+    if cancel_col.button("Cancel", key="cancel_delete", use_container_width=True):
+        st.session_state.pop("pending_delete", None)
+        st.rerun()
+
+
+def _render_rename(conversation: dict) -> None:
+    """Rename the active conversation."""
+    with st.expander("Rename current chat"):
+        new_title = st.text_input(
+            "Title",
+            value=conversation["title"],
+            key=f"rename_{conversation['id']}",
+            label_visibility="collapsed",
+        )
+        cleaned = new_title.strip()
+        if cleaned and cleaned != conversation["title"]:
+            conversation["title"] = cleaned
+            persist()
+
+
+# --- Main chat panel ---
 
 def render_history(conversation: dict) -> None:
     for msg in conversation["messages"]:
@@ -87,6 +197,9 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
         return
 
     conversation["messages"].append({"role": "user", "content": prompt})
+    # Auto-title a new chat from its first message.
+    if conversation["title"] == storage.DEFAULT_TITLE:
+        conversation["title"] = storage.derive_title(conversation)
     with st.chat_message("user"):
         st.markdown(prompt)
 
@@ -116,6 +229,7 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
                 st.error(reply)
 
     conversation["messages"].append({"role": "assistant", "content": reply})
+    persist()
 
 
 def main() -> None:

@@ -81,5 +81,5 @@ rewriting it.
 
 ## Milestone Status
 - **M1 — Core Chatbot MVP:** complete (project structure, Groq backend, chat UI, language selector)
-- **M2 — Conversation Management:** planned
+- **M2 — Conversation Management:** complete (persistent history, new chat, sidebar, rename/delete)
 - **M3 — UI/UX Enhancement:** planned
