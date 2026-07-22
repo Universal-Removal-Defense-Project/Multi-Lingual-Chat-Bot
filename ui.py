@@ -151,7 +151,7 @@ def _render_conversation_list() -> None:
         reverse=True,
     )
     for cid in ordered:
-        title = storage.derive_title(conversations[cid])
+        title = conversations[cid]["title"]
         is_active = cid == st.session_state.active_id
         row, del_col = st.columns([0.82, 0.18])
         if row.button(
@@ -173,7 +173,7 @@ def _render_delete_confirmation() -> None:
     if not cid or cid not in st.session_state.conversations:
         st.session_state.pop("pending_delete", None)
         return
-    title = storage.derive_title(st.session_state.conversations[cid])
+    title = st.session_state.conversations[cid]["title"]
     st.warning(f"Delete “{title}”? This cannot be undone.")
     confirm_col, cancel_col = st.columns(2)
     if confirm_col.button("Delete", key="confirm_delete", type="primary", use_container_width=True):
@@ -198,6 +198,8 @@ def _render_rename(conversation: dict) -> None:
         if cleaned and cleaned != conversation["title"]:
             conversation["title"] = cleaned
             persist()
+            # Rerun so the sidebar list (rendered above) shows the new title now.
+            st.rerun()
 
 
 # --- Main chat panel ---
