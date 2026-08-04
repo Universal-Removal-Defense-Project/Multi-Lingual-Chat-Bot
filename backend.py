@@ -104,13 +104,33 @@ def build_system_prompt(language: str = DEFAULT_LANGUAGE) -> str:
     )
 
 
-def build_messages(history: Iterable[dict], language: str = DEFAULT_LANGUAGE) -> list[dict]:
-    """Prepend the language-aware system prompt to the conversation history.
+def build_context_prompt(context_blocks: list[str]) -> str:
+    """Build a system message that grounds answers in retrieved sources (#25)."""
+    joined = "\n\n".join(context_blocks)
+    return (
+        "Answer using only the sources below. After each fact you use, cite its "
+        "source in brackets exactly as given, e.g. [handbook.pdf p.3]. If the "
+        "answer is not in the sources, say you don't know based on the provided "
+        "documents.\n\nSources:\n" + joined
+    )
 
-    ``history`` is a list of ``{"role": "user"|"assistant", "content": str}``
-    message dicts.
+
+def build_messages(
+    history: Iterable[dict],
+    language: str = DEFAULT_LANGUAGE,
+    context: list[str] | None = None,
+) -> list[dict]:
+    """Build the message list for the model.
+
+    Prepends the language-aware system prompt and, when ``context`` is given,
+    a retrieval-augmented sources prompt (#25). History is sanitised to only
+    ``role``/``content`` so extra fields (e.g. stored ``sources``) are not sent.
     """
-    return [{"role": "system", "content": build_system_prompt(language)}, *history]
+    messages = [{"role": "system", "content": build_system_prompt(language)}]
+    if context:
+        messages.append({"role": "system", "content": build_context_prompt(context)})
+    messages.extend({"role": m["role"], "content": m["content"]} for m in history)
+    return messages
 
 
 def stream_response(

@@ -16,6 +16,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 import backend
+import knowledge
 import storage
 import styles
 
@@ -237,10 +238,21 @@ def _render_rename(conversation: dict) -> None:
 
 # --- Main chat panel ---
 
+def render_sources(sources: list[dict]) -> None:
+    """Show the knowledge-base sources an answer was grounded in (#25)."""
+    if not sources:
+        return
+    with st.expander(f"📎 Sources ({len(sources)})"):
+        for src in sources:
+            st.caption(f"[{src['filename']} p.{src['page']}]")
+
+
 def render_history(conversation: dict) -> None:
     for msg in conversation["messages"]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            if msg["role"] == "assistant" and msg.get("sources"):
+                render_sources(msg["sources"])
 
 
 def handle_input(conversation: dict, api_key: str | None) -> None:
@@ -264,6 +276,15 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
         except backend.BackendError:
             pass  # detection is best-effort; keep the current language
 
+    # Retrieve grounding context from the knowledge base, if any (#24, #25).
+    sources: list[dict] = []
+    context: list[str] | None = None
+    if api_key and knowledge.has_documents():
+        hits = knowledge.search(prompt, k=4)
+        if hits:
+            context = [f"[{h['filename']} p.{h['page']}] {h['text']}" for h in hits]
+            sources = [{"filename": h["filename"], "page": h["page"]} for h in hits]
+
     with st.chat_message("assistant"):
         if not api_key:
             reply = (
@@ -274,7 +295,7 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
             st.warning(reply)
         else:
             messages = backend.build_messages(
-                conversation["messages"], conversation["language"]
+                conversation["messages"], conversation["language"], context=context
             )
             try:
                 # st.write_stream renders the generator incrementally and
@@ -288,8 +309,13 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
             except Exception as exc:  # catch-all so a failure doesn't crash the app
                 reply = f"⚠️ Unexpected error: {exc}"
                 st.error(reply)
+            else:
+                render_sources(sources)
 
-    conversation["messages"].append({"role": "assistant", "content": reply})
+    message = {"role": "assistant", "content": reply}
+    if sources:
+        message["sources"] = sources
+    conversation["messages"].append(message)
     persist()
 
 

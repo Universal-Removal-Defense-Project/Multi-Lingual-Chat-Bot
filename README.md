@@ -69,8 +69,11 @@ The app opens at http://localhost:8501. Pick a language in the sidebar and start
 ```
 backend.py            # Groq calls + prompt building (pure logic, no Streamlit)
 storage.py            # Conversation data model + JSON persistence
+rag.py                # Lightweight TF-IDF retrieval (pure logic)
+knowledge.py          # Knowledge base: PDF documents + chunks in SQLite
 styles.py             # Centralised theme CSS (light/dark + mobile)
-ui.py                 # Streamlit app (the only module that imports streamlit)
+ui.py                 # Streamlit app — main chat page
+pages/                # Additional Streamlit pages (Knowledge Base admin)
 assets/               # Optional: drop logo.png here to show a brand logo
 .streamlit/
     config.toml       # Theme / server config
@@ -87,6 +90,7 @@ rewriting it.
 - **M3 — UI/UX Enhancement:** complete (URDP branding, light/dark toggle, streaming, mobile styling)
 - **M4 — Translation Engine Expansion:** complete (29 languages, auto-detection, RTL support)
 - **M5 — Cloud Deployment:** complete (env config, pytest suite + CI, Docker, deploy guide)
+- **M6 — Retrieval-Augmented Knowledge Base:** complete (PDF upload, TF-IDF retrieval, source citations, admin page)
 
 ## Testing
 ```bash

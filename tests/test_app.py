@@ -5,8 +5,6 @@ happen, so they run in CI without an API key. App-level tests use Streamlit's
 AppTest to execute ui.py headlessly.
 """
 
-import shutil
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -16,16 +14,6 @@ from streamlit.testing.v1 import AppTest
 import backend
 import storage
 import styles
-
-DATA_DIR = Path("data")
-
-
-@pytest.fixture(autouse=True)
-def _clean_data_dir():
-    """Isolate the on-disk conversation store between tests."""
-    shutil.rmtree(DATA_DIR, ignore_errors=True)
-    yield
-    shutil.rmtree(DATA_DIR, ignore_errors=True)
 
 
 def _run(at):
