@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      # Reads from your shell env or a local .env file (docker compose auto-loads it).
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      # Persist conversation history across container restarts.
+      - ./data:/app/data
+    restart: unless-stopped

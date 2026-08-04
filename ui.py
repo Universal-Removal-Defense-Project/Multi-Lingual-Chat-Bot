@@ -13,10 +13,14 @@ from __future__ import annotations
 import os
 
 import streamlit as st
+from dotenv import load_dotenv
 
 import backend
 import storage
 import styles
+
+# Load a local .env (if present) so GROQ_API_KEY etc. are available via os.environ.
+load_dotenv()
 
 st.set_page_config(
     page_title="URDP Multi-Lingual Assistant",

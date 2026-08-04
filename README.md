@@ -86,3 +86,12 @@ rewriting it.
 - **M2 — Conversation Management:** complete (persistent history, new chat, sidebar, rename/delete)
 - **M3 — UI/UX Enhancement:** complete (URDP branding, light/dark toggle, streaming, mobile styling)
 - **M4 — Translation Engine Expansion:** complete (29 languages, auto-detection, RTL support)
+- **M5 — Cloud Deployment:** complete (env config, pytest suite + CI, Docker, deploy guide)
+
+## Testing
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+Tests are network-free (the Groq client is mocked) and run in CI on every pull
+request. See [docs/DEPLOY.md](docs/DEPLOY.md) for running with Docker or deploying.
