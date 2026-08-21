@@ -12,10 +12,14 @@ from typing import Iterable, Iterator
 
 from groq import Groq
 
-# Default model: Groq Llama 3.3 70B. Override with the GROQ_MODEL env var.
-DEFAULT_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Default model. Override with the GROQ_MODEL env var.
+# (llama-3.3-70b-versatile was retired by Groq; openai/gpt-oss-120b replaces it.)
+DEFAULT_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 # Small, fast model used only for language detection (Issue #17).
-DETECT_MODEL = os.environ.get("GROQ_DETECT_MODEL", "llama-3.1-8b-instant")
+# (llama-3.1-8b-instant was retired by Groq; groq/compound-mini replaces it —
+# unlike the openai/gpt-oss/qwen models, it doesn't leak reasoning text into
+# short, low-max_tokens completions like the one detect_language() below uses.)
+DETECT_MODEL = os.environ.get("GROQ_DETECT_MODEL", "groq/compound-mini")
 
 # Supported languages (Issue #16). Each entry carries:
 #   label — native name shown in the dropdown

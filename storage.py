@@ -16,6 +16,9 @@ from pathlib import Path
 # On-disk location of the persisted conversation store (gitignored).
 STORE_PATH = Path(__file__).parent / "data" / "conversations.json"
 
+# On-disk location of persisted UI settings, e.g. the dark-mode preference.
+SETTINGS_PATH = Path(__file__).parent / "data" / "settings.json"
+
 # Title used until the first user message provides a better one.
 DEFAULT_TITLE = "New chat"
 
@@ -67,3 +70,21 @@ def save_conversations(conversations: dict[str, dict], path: Path = STORE_PATH) 
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
         json.dump(conversations, fh, ensure_ascii=False, indent=2)
+
+
+def load_dark_mode(path: Path = SETTINGS_PATH) -> bool:
+    """Load the persisted dark-mode preference; defaults to light (False)."""
+    if not path.exists():
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return bool(json.load(fh).get("dark_mode", False))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def save_dark_mode(dark_mode: bool, path: Path = SETTINGS_PATH) -> None:
+    """Persist the dark-mode preference so it survives refreshes/restarts."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump({"dark_mode": dark_mode}, fh)

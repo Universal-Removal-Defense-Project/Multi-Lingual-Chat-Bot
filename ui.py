@@ -84,7 +84,9 @@ def init_state() -> None:
         or st.session_state.active_id not in st.session_state.conversations
     ):
         set_active(most_recent_id())
-    st.session_state.setdefault("dark_mode", styles.DEFAULT_THEME == "dark")
+    # Defaults to light; a manually-enabled dark mode persists across
+    # refreshes/restarts via storage.save_dark_mode (see render_sidebar).
+    st.session_state.setdefault("dark_mode", storage.load_dark_mode())
     st.session_state.setdefault("auto_detect", False)
 
 
@@ -172,7 +174,19 @@ def render_sidebar(conversation: dict) -> None:
         _render_rename(conversation)
 
         st.divider()
-        st.toggle("🌙 Dark mode", key="dark_mode")
+        # A rerun triggered by a widget above (new chat / conversation list /
+        # delete / rename) can cut the script short before this line runs,
+        # which would make Streamlit drop a widget-bound "dark_mode" key from
+        # session_state and reset it to the default theme on the next run.
+        # Keeping the persisted value in a separate, non-widget key ("dark_mode")
+        # and only using the widget's own key ("dark_mode_widget") to read the
+        # toggle avoids that: session_state.dark_mode is never widget-bound, so
+        # it survives runs where this line is never reached.
+        st.session_state.setdefault("dark_mode_widget", st.session_state.dark_mode)
+        dark_mode = st.toggle("🌙 Dark mode", key="dark_mode_widget")
+        if dark_mode != st.session_state.dark_mode:
+            st.session_state.dark_mode = dark_mode
+            storage.save_dark_mode(dark_mode)
 
 
 def _render_conversation_list() -> None:

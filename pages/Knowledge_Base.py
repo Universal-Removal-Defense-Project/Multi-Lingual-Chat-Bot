@@ -8,12 +8,13 @@ knowledge.py; this file is UI only.
 import streamlit as st
 
 import knowledge
+import storage
 import styles
 
 st.set_page_config(page_title="URDP · Knowledge Base", page_icon="📚", layout="centered")
 
-# Match the main app's theme.
-theme = "dark" if st.session_state.get("dark_mode", styles.DEFAULT_THEME == "dark") else "light"
+# Match the main app's theme (same persisted preference as ui.py's sidebar toggle).
+theme = "dark" if st.session_state.get("dark_mode", storage.load_dark_mode()) else "light"
 st.markdown(styles.theme_css(theme), unsafe_allow_html=True)
 
 st.title("📚 Knowledge Base")
