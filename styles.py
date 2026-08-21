@@ -50,12 +50,36 @@ def theme_css(theme: str = DEFAULT_THEME) -> str:
     padding: 0.4rem 0.9rem;
     margin-bottom: 0.5rem;
   }}
+  [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] {{
+    color: {t['text']} !important;
+  }}
 
   /* Chat input */
   [data-testid="stChatInput"] {{
     background-color: {t['bubble']};
     border: 1px solid {t['border']};
     border-radius: 12px;
+  }}
+
+  /* Buttons (New chat, conversation list, delete/rename/confirm/cancel) */
+  [data-testid^="stBaseButton-"] {{
+    background-color: {t['bubble']};
+    color: {t['text']} !important;
+    border: 1px solid {t['border']};
+  }}
+
+  /* Selectbox: closed control and its popped-out dropdown list */
+  [data-testid="stSelectbox"] [data-baseweb="select"] > div {{
+    background-color: {t['bubble']};
+    border-color: {t['border']};
+    color: {t['text']} !important;
+  }}
+  [data-testid="stSelectboxVirtualDropdown"] {{
+    background-color: {t['bubble']};
+    color: {t['text']} !important;
+  }}
+  [data-testid="stSelectboxVirtualDropdown"] li {{
+    color: {t['text']} !important;
   }}
 
   /* Captions / secondary text */
