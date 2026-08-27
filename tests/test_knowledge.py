@@ -4,6 +4,7 @@ Network-free and PDF-free: PDF extraction is patched so the store/chunk/search/
 delete/reindex flow is tested deterministically without generating real PDFs.
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
@@ -11,6 +12,10 @@ from streamlit.testing.v1 import AppTest
 import backend
 import knowledge
 import rag
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+APP_PATH = PROJECT_ROOT / "ui.py"
+KNOWLEDGE_BASE_PATH = PROJECT_ROOT / "pages" / "Knowledge_Base.py"
 
 
 # --- rag.py (#24) ---
@@ -89,7 +94,7 @@ def test_build_messages_with_context_and_sanitises_history():
 # --- Knowledge Base admin page (#26) ---
 
 def test_kb_page_renders_when_empty():
-    at = AppTest.from_file("pages/Knowledge_Base.py").run(timeout=30)
+    at = AppTest.from_file(KNOWLEDGE_BASE_PATH).run(timeout=30)
     assert not at.exception, at.exception
     assert any("No documents yet" in (m.value or "") for m in at.info)
 
@@ -106,7 +111,7 @@ def test_chat_grounds_answer_in_sources(monkeypatch):
 
     monkeypatch.setattr(backend, "stream_response", fake_stream)
 
-    at = AppTest.from_file("ui.py").run(timeout=30)
+    at = AppTest.from_file(APP_PATH).run(timeout=30)
     at.chat_input[0].set_value("what is the asylum deadline?").run(timeout=30)
     assert not at.exception, at.exception
 
