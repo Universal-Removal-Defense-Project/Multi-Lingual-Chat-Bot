@@ -5,6 +5,7 @@ happen, so they run in CI without an API key. App-level tests use Streamlit's
 AppTest to execute ui.py headlessly.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -14,6 +15,11 @@ from streamlit.testing.v1 import AppTest
 import backend
 import storage
 import styles
+
+# Absolute path to the repo root so AppTest.from_file resolves regardless of the
+# Streamlit version (newer versions resolve relative paths against the calling
+# test file, not the working directory).
+APP_DIR = Path(__file__).resolve().parent.parent
 
 
 def _run(at):
@@ -106,14 +112,14 @@ def test_storage_roundtrip(tmp_path):
 # --- App smoke tests via AppTest (M1–M4) ---
 
 def test_app_renders_with_one_conversation():
-    at = _run(AppTest.from_file("ui.py"))
+    at = _run(AppTest.from_file(str(APP_DIR / "ui.py")))
     assert len(at.session_state["conversations"]) == 1
     assert len(at.selectbox[0].options) >= 25
     assert any("Auto-detect" in (t.label or "") for t in at.toggle)
 
 
 def test_rename_reflected_in_sidebar_list():
-    at = _run(AppTest.from_file("ui.py"))
+    at = _run(AppTest.from_file(str(APP_DIR / "ui.py")))
     cid = at.session_state["active_id"]
     at.text_input(key=f"rename_{cid}").set_value("Housing case")
     _run(at)
@@ -121,7 +127,7 @@ def test_rename_reflected_in_sidebar_list():
 
 
 def test_language_switch_toggles_rtl():
-    at = _run(AppTest.from_file("ui.py"))
+    at = _run(AppTest.from_file(str(APP_DIR / "ui.py")))
     at.selectbox[0].set_value("العربية")
     _run(at)
     assert "direction: rtl" in " ".join(m.value for m in at.markdown)
@@ -131,7 +137,7 @@ def test_language_switch_toggles_rtl():
 
 
 def test_new_chat_and_delete_flow():
-    at = _run(AppTest.from_file("ui.py"))
+    at = _run(AppTest.from_file(str(APP_DIR / "ui.py")))
     start = len(at.session_state["conversations"])
     for b in at.button:
         if b.label and "New chat" in b.label:
