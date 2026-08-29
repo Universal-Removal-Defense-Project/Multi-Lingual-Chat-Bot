@@ -1,0 +1,16 @@
+.git/
+.github/
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+data/
+.env
+.streamlit/secrets.toml
+MILESTONES.md
+.DS_Store
+.idea/
+.vscode/
