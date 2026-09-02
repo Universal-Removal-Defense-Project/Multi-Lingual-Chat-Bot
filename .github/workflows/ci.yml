@@ -36,4 +36,4 @@ jobs:
         run: python -m compileall backend.py storage.py styles.py ui.py
 
       - name: Run tests
-        run: pytest -q
+        run: python -m pytest -q
