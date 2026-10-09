@@ -233,21 +233,33 @@ def _render_delete_confirmation() -> None:
         st.rerun()
 
 
+def _on_rename(cid: str) -> None:
+    """Apply a title the user typed into the rename box."""
+    conversation = st.session_state.conversations.get(cid)
+    new_title = st.session_state[f"rename_{cid}"].strip()
+    if conversation and new_title and new_title != conversation["title"]:
+        conversation["title"] = new_title
+        persist()
+
+
 def _render_rename(conversation: dict) -> None:
-    """Rename the active conversation."""
+    """Rename the active conversation.
+
+    The box always shows the current title, which also changes when a new chat
+    is auto-titled. Only an edit by the user renames (on_change): comparing the
+    box to the title on every run used to treat the stale box as a rename, which
+    reverted the auto-title and dropped the user's next message.
+    """
+    key = f"rename_{conversation['id']}"
+    st.session_state[key] = conversation["title"]
     with st.expander("Rename current chat"):
-        new_title = st.text_input(
+        st.text_input(
             "Title",
-            value=conversation["title"],
-            key=f"rename_{conversation['id']}",
+            key=key,
+            on_change=_on_rename,
+            args=(conversation["id"],),
             label_visibility="collapsed",
         )
-        cleaned = new_title.strip()
-        if cleaned and cleaned != conversation["title"]:
-            conversation["title"] = cleaned
-            persist()
-            # Rerun so the sidebar list (rendered above) shows the new title now.
-            st.rerun()
 
 
 # --- Main chat panel ---
