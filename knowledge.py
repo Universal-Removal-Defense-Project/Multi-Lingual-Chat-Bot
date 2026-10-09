@@ -20,8 +20,9 @@ from pathlib import Path
 from pypdf import PdfReader
 
 import rag
+import storage
 
-DB_PATH = Path(__file__).parent / "data" / "knowledge.db"
+DB_PATH = storage.DATA_DIR / "knowledge.db"
 
 
 def _now() -> str:

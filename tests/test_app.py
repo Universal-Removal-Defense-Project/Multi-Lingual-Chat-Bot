@@ -128,6 +128,9 @@ def test_rename_reflected_in_sidebar_list():
 
 def test_language_switch_toggles_rtl():
     at = _run(AppTest.from_file(str(APP_DIR / "ui.py")))
+    # Auto-detect is on by default (#39) and disables the dropdown; pick by hand.
+    next(t for t in at.toggle if "Auto-detect" in (t.label or "")).set_value(False)
+    _run(at)
     at.selectbox[0].set_value("العربية")
     _run(at)
     assert "direction: rtl" in " ".join(m.value for m in at.markdown)

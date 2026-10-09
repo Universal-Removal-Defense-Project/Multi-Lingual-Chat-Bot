@@ -11,6 +11,7 @@ Run with: streamlit run ui.py
 from __future__ import annotations
 
 import os
+from typing import NamedTuple
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -87,7 +88,9 @@ def init_state() -> None:
     # Defaults to light; a manually-enabled dark mode persists across
     # refreshes/restarts via storage.save_dark_mode (see render_sidebar).
     st.session_state.setdefault("dark_mode", storage.load_dark_mode())
-    st.session_state.setdefault("auto_detect", False)
+    # On by default (#39): replying in the user's language shouldn't require
+    # finding a setting in a UI they may not read well.
+    st.session_state.setdefault("auto_detect", True)
 
 
 def active_conversation() -> dict:
@@ -132,10 +135,41 @@ def delete_conversation(cid: str) -> None:
 
 def _on_language_change() -> None:
     """Apply a manual language pick from the dropdown to the active conversation."""
-    active_conversation()["language"] = backend.SUPPORTED_LANGUAGES[
-        st.session_state.lang_select
-    ]
+    conversation = active_conversation()
+    conversation["language"] = backend.SUPPORTED_LANGUAGES[st.session_state.lang_select]
+    conversation["detection"] = None  # chosen by hand, not detected (#37)
     persist()
+
+
+# What the sidebar says about auto-detection, by the outcome of the last attempt
+# (#37). A failed attempt is shown, not hidden behind the language it kept.
+_DETECTION_CAPTIONS = {
+    None: "Replies in the language you write in (now: {language}).",
+    "detected": "Last detected: {language}",
+    "unknown": "⚠️ Couldn't detect the language of your last message — kept {language}.",
+    "error": "⚠️ Language detection is unavailable right now — kept {language}.",
+}
+
+
+def detection_caption(conversation: dict) -> str:
+    """Sidebar text describing this conversation's last language auto-detection."""
+    template = _DETECTION_CAPTIONS.get(conversation.get("detection"), _DETECTION_CAPTIONS[None])
+    return template.format(language=conversation["language"])
+
+
+def sticky_toggle(label: str, key: str, **kwargs) -> bool:
+    """A toggle whose value survives runs that end before it is drawn.
+
+    When a button above it calls st.rerun(), Streamlit drops the state of
+    widgets that run never reached, which resets a toggle bound directly to
+    ``key`` (this turned auto-detect off on every "New chat"). So the value
+    lives in ``st.session_state[key]``, which no widget owns, and the toggle
+    uses ``f"{key}_widget"``, re-seeded from it whenever it was dropped.
+    """
+    widget_key = f"{key}_widget"
+    st.session_state.setdefault(widget_key, st.session_state[key])
+    st.session_state[key] = st.toggle(label, key=widget_key, **kwargs)
+    return st.session_state[key]
 
 
 def render_sidebar(conversation: dict) -> None:
@@ -146,11 +180,11 @@ def render_sidebar(conversation: dict) -> None:
             start_new_chat()
             st.rerun()
 
-        # Auto-detect language from the user's message (Issue #17). When off,
-        # the dropdown is the manual override.
-        auto = st.toggle(
+        # Auto-detect the reply language from each message (#17; on by default
+        # since #39). When off, the dropdown is the manual override.
+        auto = sticky_toggle(
             "🌐 Auto-detect language",
-            key="auto_detect",
+            "auto_detect",
             help="Detect the language from your message and reply in it.",
         )
 
@@ -166,7 +200,7 @@ def render_sidebar(conversation: dict) -> None:
             help="The assistant will reply in this language.",
         )
         if auto:
-            st.caption(f"Detected: {conversation['language']}")
+            st.caption(detection_caption(conversation))
 
         st.divider()
         _render_conversation_list()
@@ -174,19 +208,9 @@ def render_sidebar(conversation: dict) -> None:
         _render_rename(conversation)
 
         st.divider()
-        # A rerun triggered by a widget above (new chat / conversation list /
-        # delete / rename) can cut the script short before this line runs,
-        # which would make Streamlit drop a widget-bound "dark_mode" key from
-        # session_state and reset it to the default theme on the next run.
-        # Keeping the persisted value in a separate, non-widget key ("dark_mode")
-        # and only using the widget's own key ("dark_mode_widget") to read the
-        # toggle avoids that: session_state.dark_mode is never widget-bound, so
-        # it survives runs where this line is never reached.
-        st.session_state.setdefault("dark_mode_widget", st.session_state.dark_mode)
-        dark_mode = st.toggle("🌙 Dark mode", key="dark_mode_widget")
-        if dark_mode != st.session_state.dark_mode:
-            st.session_state.dark_mode = dark_mode
-            storage.save_dark_mode(dark_mode)
+        was_dark = st.session_state.dark_mode
+        if sticky_toggle("🌙 Dark mode", "dark_mode") != was_dark:
+            storage.save_dark_mode(st.session_state.dark_mode)
 
 
 def _render_conversation_list() -> None:
@@ -233,21 +257,33 @@ def _render_delete_confirmation() -> None:
         st.rerun()
 
 
+def _on_rename(cid: str) -> None:
+    """Apply a title the user typed into the rename box."""
+    conversation = st.session_state.conversations.get(cid)
+    new_title = st.session_state[f"rename_{cid}"].strip()
+    if conversation and new_title and new_title != conversation["title"]:
+        conversation["title"] = new_title
+        persist()
+
+
 def _render_rename(conversation: dict) -> None:
-    """Rename the active conversation."""
+    """Rename the active conversation.
+
+    The box always shows the current title, which also changes when a new chat
+    is auto-titled. Only an edit by the user renames (on_change): comparing the
+    box to the title on every run used to treat the stale box as a rename, which
+    reverted the auto-title and dropped the user's next message.
+    """
+    key = f"rename_{conversation['id']}"
+    st.session_state[key] = conversation["title"]
     with st.expander("Rename current chat"):
-        new_title = st.text_input(
+        st.text_input(
             "Title",
-            value=conversation["title"],
-            key=f"rename_{conversation['id']}",
+            key=key,
+            on_change=_on_rename,
+            args=(conversation["id"],),
             label_visibility="collapsed",
         )
-        cleaned = new_title.strip()
-        if cleaned and cleaned != conversation["title"]:
-            conversation["title"] = cleaned
-            persist()
-            # Rerun so the sidebar list (rendered above) shows the new title now.
-            st.rerun()
 
 
 # --- Main chat panel ---
@@ -269,36 +305,55 @@ def render_history(conversation: dict) -> None:
                 render_sources(msg["sources"])
 
 
-def handle_input(conversation: dict, api_key: str | None) -> None:
-    prompt = st.chat_input("Type your message…")
-    if not prompt:
-        return
+class Turn(NamedTuple):
+    """Knowledge-base grounding for the reply to the latest user message."""
 
+    context: list[str] | None
+    sources: list[dict]
+
+
+def begin_turn(conversation: dict, prompt: str, api_key: str | None) -> Turn:
+    """Record a new user message and update state before anything is drawn.
+
+    Runs before the sidebar, so everything it shows — the chat title, the
+    detected language and the dropdown — already reflects this message (#37).
+    """
     conversation["messages"].append({"role": "user", "content": prompt})
     # Auto-title a new chat from its first message.
     if conversation["title"] == storage.DEFAULT_TITLE:
         conversation["title"] = storage.derive_title(conversation)
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    # Auto-detect the reply language (#17). Messages too short to tell ("OK",
+    # "123") are skipped, so they keep the current language and its status.
+    if st.session_state.auto_detect and api_key and backend.has_language_signal(prompt):
+        conversation["detection"] = _detect_language(conversation, prompt, api_key)
+    return _retrieve_context(prompt, api_key)
 
-    # Auto-detect the response language from the message (Issue #17).
-    if st.session_state.get("auto_detect") and api_key:
-        try:
-            detected = backend.detect_language(prompt, api_key=api_key)
-            if detected:
-                conversation["language"] = detected
-        except backend.BackendError:
-            pass  # detection is best-effort; keep the current language
 
-    # Retrieve grounding context from the knowledge base, if any (#24, #25).
-    sources: list[dict] = []
-    context: list[str] | None = None
-    if api_key and knowledge.has_documents():
-        hits = knowledge.search(prompt, k=4)
-        if hits:
-            context = [f"[{h['filename']} p.{h['page']}] {h['text']}" for h in hits]
-            sources = [{"filename": h["filename"], "page": h["page"]} for h in hits]
+def _detect_language(conversation: dict, prompt: str, api_key: str) -> str:
+    """Detect the reply language; return the outcome for the sidebar (#37)."""
+    try:
+        detected = backend.detect_language(prompt, api_key=api_key)
+    except backend.BackendError:
+        return "error"
+    if not detected:
+        return "unknown"
+    conversation["language"] = detected
+    return "detected"
 
+
+def _retrieve_context(prompt: str, api_key: str | None) -> Turn:
+    """Find knowledge-base passages to ground the reply in (#24, #25)."""
+    hits = knowledge.search(prompt, k=4) if api_key and knowledge.has_documents() else []
+    if not hits:
+        return Turn(context=None, sources=[])
+    return Turn(
+        context=[f"[{h['filename']} p.{h['page']}] {h['text']}" for h in hits],
+        sources=[{"filename": h["filename"], "page": h["page"]} for h in hits],
+    )
+
+
+def respond(conversation: dict, turn: Turn, api_key: str | None) -> None:
+    """Stream the assistant's reply to the latest user message and save it."""
     with st.chat_message("assistant"):
         if not api_key:
             reply = (
@@ -309,7 +364,10 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
             st.warning(reply)
         else:
             messages = backend.build_messages(
-                conversation["messages"], conversation["language"], context=context
+                conversation["messages"],
+                conversation["language"],
+                context=turn.context,
+                auto_detected=st.session_state.auto_detect,
             )
             try:
                 # st.write_stream renders the generator incrementally and
@@ -324,18 +382,25 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
                 reply = f"⚠️ Unexpected error: {exc}"
                 st.error(reply)
             else:
-                render_sources(sources)
+                render_sources(turn.sources)
 
     message = {"role": "assistant", "content": reply}
-    if sources:
-        message["sources"] = sources
+    if turn.sources:
+        message["sources"] = turn.sources
     conversation["messages"].append(message)
     persist()
 
 
 def main() -> None:
     init_state()
+    api_key = get_api_key()
     conversation = active_conversation()
+
+    # Take in a new message before drawing anything, so the sidebar and layout
+    # reflect it in this same run (#37). st.chat_input stays pinned to the
+    # bottom of the page wherever it is called.
+    prompt = st.chat_input("Type your message…")
+    turn = begin_turn(conversation, prompt, api_key) if prompt else None
 
     render_sidebar(conversation)
     # Inject theme CSS after the sidebar so the toggle applies in the same run.
@@ -348,10 +413,11 @@ def main() -> None:
     )
 
     st.title("🌐 URDP Multi-Lingual Assistant")
-    st.caption("Ask anything — I'll reply in your selected language.")
+    st.caption("Ask anything — I'll reply in your language.")
 
-    render_history(conversation)
-    handle_input(conversation, get_api_key())
+    render_history(conversation)  # includes the new message, if any
+    if turn is not None:
+        respond(conversation, turn, api_key)
 
 
 if __name__ == "__main__":

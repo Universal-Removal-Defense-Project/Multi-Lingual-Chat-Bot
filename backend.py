@@ -8,6 +8,7 @@ can render replies as they are generated.
 from __future__ import annotations
 
 import os
+import re
 from typing import Iterable, Iterator
 
 from groq import Groq
@@ -16,10 +17,12 @@ from groq import Groq
 # (llama-3.3-70b-versatile was retired by Groq; openai/gpt-oss-120b replaces it.)
 DEFAULT_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 # Small, fast model used only for language detection (Issue #17).
-# (llama-3.1-8b-instant was retired by Groq; groq/compound-mini replaces it —
-# unlike the openai/gpt-oss/qwen models, it doesn't leak reasoning text into
-# short, low-max_tokens completions like the one detect_language() below uses.)
-DETECT_MODEL = os.environ.get("GROQ_DETECT_MODEL", "groq/compound-mini")
+# (groq/compound-mini, the previous default, is no longer available on Groq.)
+DETECT_MODEL = os.environ.get("GROQ_DETECT_MODEL", "openai/gpt-oss-20b")
+# Output budget for detect_language(). GPT-OSS models spend part of it on hidden
+# reasoning before answering, so it must stay well above the few tokens a
+# language name needs, or the answer comes back empty.
+DETECT_MAX_TOKENS = 128
 
 # Supported languages (Issue #16). Each entry carries:
 #   label — native name shown in the dropdown
@@ -95,16 +98,35 @@ def get_client(api_key: str | None = None) -> Groq:
     return Groq(api_key=resolve_api_key(api_key))
 
 
-def build_system_prompt(language: str = DEFAULT_LANGUAGE) -> str:
-    """Build the system prompt that fixes the assistant's response language."""
+def build_system_prompt(language: str = DEFAULT_LANGUAGE, *, auto_detected: bool = False) -> str:
+    """Build the system prompt that sets the assistant's reply language.
+
+    When the language was auto-detected, ``language`` is only a fallback: the
+    model replies in the language of the user's own words, so text pasted in
+    another language for translation can't flip the reply language (#36), even
+    if detection got it wrong.
+    """
+    if auto_detected:
+        language_rule = (
+            "Reply in the language the user writes their own questions and "
+            "instructions in. If they paste or quote text in another language, "
+            "for example to have it translated or explained, still reply in the "
+            "language of their own words, not the pasted text, unless they ask for "
+            "a different language. If the language of their latest message is "
+            "unclear, for example a short reply like \"OK\" or \"thanks\", reply "
+            f"in {language}."
+        )
+    else:
+        language_rule = (
+            f"Always respond in {language}, regardless of the language the user "
+            "writes in, unless the user explicitly asks for a different language."
+        )
     return (
         "You are the Universal Multi-Lingual Access Assistant, built for the "
         "Universal Removal Defense Project (URDP). Your mission is to make "
         "information accessible across languages so that language is never a "
         "barrier to services or to justice.\n\n"
-        f"Always respond in {language}, regardless of the language the user "
-        "writes in, unless the user explicitly asks for a different language. "
-        "Be clear, warm, and concise. If you are unsure, say so honestly."
+        f"{language_rule} Be clear, warm, and concise. If you are unsure, say so honestly."
     )
 
 
@@ -123,6 +145,8 @@ def build_messages(
     history: Iterable[dict],
     language: str = DEFAULT_LANGUAGE,
     context: list[str] | None = None,
+    *,
+    auto_detected: bool = False,
 ) -> list[dict]:
     """Build the message list for the model.
 
@@ -130,7 +154,8 @@ def build_messages(
     a retrieval-augmented sources prompt (#25). History is sanitised to only
     ``role``/``content`` so extra fields (e.g. stored ``sources``) are not sent.
     """
-    messages = [{"role": "system", "content": build_system_prompt(language)}]
+    system_prompt = build_system_prompt(language, auto_detected=auto_detected)
+    messages = [{"role": "system", "content": system_prompt}]
     if context:
         messages.append({"role": "system", "content": build_context_prompt(context)})
     messages.extend({"role": m["role"], "content": m["content"]} for m in history)
@@ -173,14 +198,60 @@ def get_response(
     return "".join(stream_response(messages, model=model, api_key=api_key))
 
 
-def detect_language(text: str, *, api_key: str | None = None) -> str | None:
-    """Detect the language of ``text`` and return a supported language name (#17).
+def _reasoning_options(model: str) -> dict:
+    """Keep GPT-OSS reasoning brief and out of the reply; other models need none."""
+    if model.startswith("openai/gpt-oss"):
+        return {"reasoning_effort": "low", "include_reasoning": False}
+    return {}
 
-    Uses the fast detection model and constrains the answer to the supported
-    languages. Returns None if the language cannot be matched, so the caller can
-    keep the current language rather than guess.
+
+# Judge the user's own words, not text they paste in for translation (#36).
+_DETECT_PROMPT = (
+    "Identify the language the user writes their own words in — their questions, "
+    "requests and instructions. Ignore any text they paste, quote or ask to have "
+    "translated or explained. If the message contains only pasted text, use the "
+    "language of that text.\n"
+    "Answer with ONLY the English name of the language, chosen from this list: "
+    "{known}. Answer 'Unknown' if unsure."
+)
+
+# Other names a model may give for a supported language.
+_LANGUAGE_ALIASES = {
+    "persian": "Farsi",
+    "mandarin": "Chinese",
+    "cantonese": "Chinese",
+    "filipino": "Tagalog",
+}
+_NAME_LOOKUP = {**{name.casefold(): name for name in LANGUAGE_BY_NAME}, **_LANGUAGE_ALIASES}
+
+
+def _match_language(reply: str) -> str | None:
+    """Map the detector's reply ("Chinese.", "Persian") to one supported name, or None."""
+    words = re.sub(r"[^\w\s]", " ", reply).casefold().split()
+    phrase = " ".join(words)
+    found = {_NAME_LOOKUP[word] for word in words if word in _NAME_LOOKUP}
+    found |= {name for key, name in _NAME_LOOKUP.items() if " " in key and key in phrase}
+    return found.pop() if len(found) == 1 else None
+
+
+# Messages with fewer letters than this ("OK", "123", "...") are too short to
+# tell their language; detecting them would switch the reply language by guess.
+MIN_DETECT_LETTERS = 3
+
+
+def has_language_signal(text: str) -> bool:
+    """True if ``text`` has enough letters for its language to be detected."""
+    return sum(ch.isalpha() for ch in text) >= MIN_DETECT_LETTERS
+
+
+def detect_language(text: str, *, api_key: str | None = None) -> str | None:
+    """Detect the language the user writes in and return a supported language name.
+
+    Judges the user's own words, not text they paste in for translation or
+    explanation (#36). Returns None if the language cannot be determined, so the
+    caller can keep the current language rather than guess.
     """
-    if not text.strip():
+    if not has_language_signal(text):
         return None
     known = ", ".join(lang["name"] for lang in LANGUAGES)
     client = get_client(api_key)
@@ -188,21 +259,14 @@ def detect_language(text: str, *, api_key: str | None = None) -> str | None:
         completion = client.chat.completions.create(
             model=DETECT_MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Identify the language of the user's message. Reply with "
-                        "ONLY the English name of the language, chosen from this "
-                        f"list when it matches: {known}. Reply 'Unknown' if unsure."
-                    ),
-                },
-                {"role": "user", "content": text},
+                {"role": "system", "content": _DETECT_PROMPT.format(known=known)},
+                {"role": "user", "content": f"<message>\n{text}\n</message>"},
             ],
             temperature=0,
-            max_tokens=5,
+            max_completion_tokens=DETECT_MAX_TOKENS,
+            **_reasoning_options(DETECT_MODEL),
         )
     except Exception as exc:
         raise BackendError(f"Language detection failed: {exc}") from exc
 
-    name = (completion.choices[0].message.content or "").strip()
-    return name if name in LANGUAGE_BY_NAME else None
+    return _match_language(completion.choices[0].message.content or "")

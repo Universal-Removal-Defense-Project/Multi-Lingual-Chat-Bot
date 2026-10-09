@@ -9,15 +9,21 @@ map to disk.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-# On-disk location of the persisted conversation store (gitignored).
-STORE_PATH = Path(__file__).parent / "data" / "conversations.json"
+# Directory for all local app data (gitignored): chats, settings and the
+# knowledge base. Set URDP_DATA_DIR to keep it elsewhere; the test suite points
+# it at a temporary directory so running tests never touches real data.
+DATA_DIR = Path(os.environ.get("URDP_DATA_DIR") or Path(__file__).parent / "data")
+
+# On-disk location of the persisted conversation store.
+STORE_PATH = DATA_DIR / "conversations.json"
 
 # On-disk location of persisted UI settings, e.g. the dark-mode preference.
-SETTINGS_PATH = Path(__file__).parent / "data" / "settings.json"
+SETTINGS_PATH = DATA_DIR / "settings.json"
 
 # Title used until the first user message provides a better one.
 DEFAULT_TITLE = "New chat"
@@ -38,6 +44,10 @@ def new_conversation(language: str = "English") -> dict:
         "title": DEFAULT_TITLE,
         "created_at": _now_iso(),
         "language": language,
+        # Outcome of the last language auto-detection: None (none since the
+        # language was set), "detected", "unknown" or "error". Older saved
+        # conversations may lack this key, so read it with .get().
+        "detection": None,
         "messages": [],  # list of {"role": "user"|"assistant", "content": str}
     }
 
