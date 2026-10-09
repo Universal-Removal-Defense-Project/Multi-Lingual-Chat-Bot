@@ -101,6 +101,13 @@ def test_auto_detected_prompt_follows_the_users_own_words():
     assert "Always respond in English" not in prompt  # English is only the fallback
 
 
+def test_auto_detected_prompt_keeps_the_language_for_short_replies():
+    prompt = backend.build_system_prompt("Chinese", auto_detected=True)
+    assert 'short reply like "OK"' in prompt
+    assert prompt.rstrip().endswith("reply in Chinese. Be clear, warm, and concise. "
+                                    "If you are unsure, say so honestly.")
+
+
 def test_manually_chosen_language_is_still_pinned():
     prompt = backend.build_system_prompt("Spanish")
     assert "Always respond in Spanish" in prompt

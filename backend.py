@@ -112,7 +112,9 @@ def build_system_prompt(language: str = DEFAULT_LANGUAGE, *, auto_detected: bool
             "instructions in. If they paste or quote text in another language, "
             "for example to have it translated or explained, still reply in the "
             "language of their own words, not the pasted text, unless they ask for "
-            f"a different language. If their language is unclear, reply in {language}."
+            "a different language. If the language of their latest message is "
+            "unclear, for example a short reply like \"OK\" or \"thanks\", reply "
+            f"in {language}."
         )
     else:
         language_rule = (
