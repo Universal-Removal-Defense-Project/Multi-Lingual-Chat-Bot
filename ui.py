@@ -309,7 +309,10 @@ def handle_input(conversation: dict, api_key: str | None) -> None:
             st.warning(reply)
         else:
             messages = backend.build_messages(
-                conversation["messages"], conversation["language"], context=context
+                conversation["messages"],
+                conversation["language"],
+                context=context,
+                auto_detected=st.session_state.auto_detect,
             )
             try:
                 # st.write_stream renders the generator incrementally and

@@ -47,3 +47,53 @@ def test_other_detection_models_get_no_reasoning_options(fake_client, monkeypatc
     backend.detect_language("你好，我想问一下签证的问题", api_key="x")
     assert "reasoning_effort" not in fake_client.request
     assert "include_reasoning" not in fake_client.request
+
+
+# --- #36: judge the user's own words, not pasted text ---
+
+def test_detector_is_told_to_ignore_pasted_text(fake_client):
+    pasted = "请帮我翻译一下这段话：\n\nYou must appear for your hearing."
+    backend.detect_language(pasted, api_key="x")
+    system, user = fake_client.request["messages"]
+    assert "Ignore any text they paste" in system["content"]
+    assert user["content"] == f"<message>\n{pasted}\n</message>"
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        ("Chinese", "Chinese"),
+        ("Chinese.", "Chinese"),
+        ("  chinese\n", "Chinese"),
+        ("Chinese (Simplified)", "Chinese"),
+        ("Persian", "Farsi"),
+        ("Filipino", "Tagalog"),
+        ("Haitian Creole", "Haitian Creole"),
+        ("Unknown", None),
+        ("", None),
+        ("Klingon", None),
+        ("English and Chinese", None),  # ambiguous: keep the current language
+    ],
+)
+def test_detector_reply_is_matched_to_one_supported_language(reply, expected):
+    with patch.object(backend, "get_client", lambda api_key=None: FakeClient(reply)):
+        assert backend.detect_language("some message", api_key="x") == expected
+
+
+def test_auto_detected_prompt_follows_the_users_own_words():
+    prompt = backend.build_system_prompt("English", auto_detected=True)
+    assert "own questions and instructions" in prompt
+    assert "not the pasted text" in prompt
+    assert "Always respond in English" not in prompt  # English is only the fallback
+
+
+def test_manually_chosen_language_is_still_pinned():
+    prompt = backend.build_system_prompt("Spanish")
+    assert "Always respond in Spanish" in prompt
+
+
+def test_build_messages_passes_the_auto_detect_mode():
+    auto = backend.build_messages([], "English", auto_detected=True)
+    manual = backend.build_messages([], "English")
+    assert "not the pasted text" in auto[0]["content"]
+    assert "Always respond in English" in manual[0]["content"]
