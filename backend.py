@@ -16,10 +16,12 @@ from groq import Groq
 # (llama-3.3-70b-versatile was retired by Groq; openai/gpt-oss-120b replaces it.)
 DEFAULT_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 # Small, fast model used only for language detection (Issue #17).
-# (llama-3.1-8b-instant was retired by Groq; groq/compound-mini replaces it —
-# unlike the openai/gpt-oss/qwen models, it doesn't leak reasoning text into
-# short, low-max_tokens completions like the one detect_language() below uses.)
-DETECT_MODEL = os.environ.get("GROQ_DETECT_MODEL", "groq/compound-mini")
+# (groq/compound-mini, the previous default, is no longer available on Groq.)
+DETECT_MODEL = os.environ.get("GROQ_DETECT_MODEL", "openai/gpt-oss-20b")
+# Output budget for detect_language(). GPT-OSS models spend part of it on hidden
+# reasoning before answering, so it must stay well above the few tokens a
+# language name needs, or the answer comes back empty.
+DETECT_MAX_TOKENS = 128
 
 # Supported languages (Issue #16). Each entry carries:
 #   label — native name shown in the dropdown
@@ -173,6 +175,13 @@ def get_response(
     return "".join(stream_response(messages, model=model, api_key=api_key))
 
 
+def _reasoning_options(model: str) -> dict:
+    """Keep GPT-OSS reasoning brief and out of the reply; other models need none."""
+    if model.startswith("openai/gpt-oss"):
+        return {"reasoning_effort": "low", "include_reasoning": False}
+    return {}
+
+
 def detect_language(text: str, *, api_key: str | None = None) -> str | None:
     """Detect the language of ``text`` and return a supported language name (#17).
 
@@ -199,7 +208,8 @@ def detect_language(text: str, *, api_key: str | None = None) -> str | None:
                 {"role": "user", "content": text},
             ],
             temperature=0,
-            max_tokens=5,
+            max_completion_tokens=DETECT_MAX_TOKENS,
+            **_reasoning_options(DETECT_MODEL),
         )
     except Exception as exc:
         raise BackendError(f"Language detection failed: {exc}") from exc
