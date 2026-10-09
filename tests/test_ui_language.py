@@ -138,3 +138,39 @@ def test_new_chat_title_shows_in_the_sidebar_at_once(replies):
     at = run_app()
     send(at, "How do I apply for asylum?")
     assert "How do I apply for asylum?" in [b.label for b in at.button]
+
+
+# --- #39: auto-detect is on by default, and settings stick ---
+
+def click_new_chat(at):
+    next(b for b in at.button if b.label and "New chat" in b.label).click().run(timeout=30)
+    assert not at.exception, at.exception
+
+
+def test_auto_detect_is_on_by_default(replies, detector):
+    at = run_app()
+    assert auto_detect_toggle(at).value is True
+    assert at.selectbox(key="lang_select").disabled
+    send(at, "你好，我想问一下签证的问题")  # detected without touching any setting
+    assert "Last detected: Chinese" in sidebar_text(at)
+
+
+def test_turning_auto_detect_off_survives_new_chat(replies):
+    # Regression: a toggle drawn below "New chat" lost its state when the button
+    # reran the app, so auto-detect snapped back to its default.
+    at = run_app()
+    auto_detect_toggle(at).set_value(False).run(timeout=30)
+    click_new_chat(at)
+    assert at.session_state["auto_detect"] is False
+    assert auto_detect_toggle(at).value is False
+
+
+def test_dark_mode_survives_new_chat_and_is_saved(replies):
+    import storage
+
+    at = run_app()
+    dark = next(t for t in at.toggle if "Dark mode" in (t.label or ""))
+    dark.set_value(True).run(timeout=30)
+    click_new_chat(at)
+    assert at.session_state["dark_mode"] is True
+    assert storage.load_dark_mode() is True

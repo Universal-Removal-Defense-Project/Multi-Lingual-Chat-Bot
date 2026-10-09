@@ -88,7 +88,9 @@ def init_state() -> None:
     # Defaults to light; a manually-enabled dark mode persists across
     # refreshes/restarts via storage.save_dark_mode (see render_sidebar).
     st.session_state.setdefault("dark_mode", storage.load_dark_mode())
-    st.session_state.setdefault("auto_detect", False)
+    # On by default (#39): replying in the user's language shouldn't require
+    # finding a setting in a UI they may not read well.
+    st.session_state.setdefault("auto_detect", True)
 
 
 def active_conversation() -> dict:
@@ -150,8 +152,24 @@ _DETECTION_CAPTIONS = {
 
 
 def detection_caption(conversation: dict) -> str:
+    """Sidebar text describing this conversation's last language auto-detection."""
     template = _DETECTION_CAPTIONS.get(conversation.get("detection"), _DETECTION_CAPTIONS[None])
     return template.format(language=conversation["language"])
+
+
+def sticky_toggle(label: str, key: str, **kwargs) -> bool:
+    """A toggle whose value survives runs that end before it is drawn.
+
+    When a button above it calls st.rerun(), Streamlit drops the state of
+    widgets that run never reached, which resets a toggle bound directly to
+    ``key`` (this turned auto-detect off on every "New chat"). So the value
+    lives in ``st.session_state[key]``, which no widget owns, and the toggle
+    uses ``f"{key}_widget"``, re-seeded from it whenever it was dropped.
+    """
+    widget_key = f"{key}_widget"
+    st.session_state.setdefault(widget_key, st.session_state[key])
+    st.session_state[key] = st.toggle(label, key=widget_key, **kwargs)
+    return st.session_state[key]
 
 
 def render_sidebar(conversation: dict) -> None:
@@ -162,11 +180,11 @@ def render_sidebar(conversation: dict) -> None:
             start_new_chat()
             st.rerun()
 
-        # Auto-detect language from the user's message (Issue #17). When off,
-        # the dropdown is the manual override.
-        auto = st.toggle(
+        # Auto-detect the reply language from each message (#17; on by default
+        # since #39). When off, the dropdown is the manual override.
+        auto = sticky_toggle(
             "🌐 Auto-detect language",
-            key="auto_detect",
+            "auto_detect",
             help="Detect the language from your message and reply in it.",
         )
 
@@ -190,19 +208,9 @@ def render_sidebar(conversation: dict) -> None:
         _render_rename(conversation)
 
         st.divider()
-        # A rerun triggered by a widget above (new chat / conversation list /
-        # delete / rename) can cut the script short before this line runs,
-        # which would make Streamlit drop a widget-bound "dark_mode" key from
-        # session_state and reset it to the default theme on the next run.
-        # Keeping the persisted value in a separate, non-widget key ("dark_mode")
-        # and only using the widget's own key ("dark_mode_widget") to read the
-        # toggle avoids that: session_state.dark_mode is never widget-bound, so
-        # it survives runs where this line is never reached.
-        st.session_state.setdefault("dark_mode_widget", st.session_state.dark_mode)
-        dark_mode = st.toggle("🌙 Dark mode", key="dark_mode_widget")
-        if dark_mode != st.session_state.dark_mode:
-            st.session_state.dark_mode = dark_mode
-            storage.save_dark_mode(dark_mode)
+        was_dark = st.session_state.dark_mode
+        if sticky_toggle("🌙 Dark mode", "dark_mode") != was_dark:
+            storage.save_dark_mode(st.session_state.dark_mode)
 
 
 def _render_conversation_list() -> None:
@@ -405,7 +413,7 @@ def main() -> None:
     )
 
     st.title("🌐 URDP Multi-Lingual Assistant")
-    st.caption("Ask anything — I'll reply in your selected language.")
+    st.caption("Ask anything — I'll reply in your language.")
 
     render_history(conversation)  # includes the new message, if any
     if turn is not None:
