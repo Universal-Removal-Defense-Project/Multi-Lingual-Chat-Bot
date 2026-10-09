@@ -44,6 +44,10 @@ def new_conversation(language: str = "English") -> dict:
         "title": DEFAULT_TITLE,
         "created_at": _now_iso(),
         "language": language,
+        # Outcome of the last language auto-detection: None (none since the
+        # language was set), "detected", "unknown" or "error". Older saved
+        # conversations may lack this key, so read it with .get().
+        "detection": None,
         "messages": [],  # list of {"role": "user"|"assistant", "content": str}
     }
 

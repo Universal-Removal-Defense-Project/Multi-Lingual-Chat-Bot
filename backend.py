@@ -232,6 +232,16 @@ def _match_language(reply: str) -> str | None:
     return found.pop() if len(found) == 1 else None
 
 
+# Messages with fewer letters than this ("OK", "123", "...") are too short to
+# tell their language; detecting them would switch the reply language by guess.
+MIN_DETECT_LETTERS = 3
+
+
+def has_language_signal(text: str) -> bool:
+    """True if ``text`` has enough letters for its language to be detected."""
+    return sum(ch.isalpha() for ch in text) >= MIN_DETECT_LETTERS
+
+
 def detect_language(text: str, *, api_key: str | None = None) -> str | None:
     """Detect the language the user writes in and return a supported language name.
 
@@ -239,7 +249,7 @@ def detect_language(text: str, *, api_key: str | None = None) -> str | None:
     explanation (#36). Returns None if the language cannot be determined, so the
     caller can keep the current language rather than guess.
     """
-    if not text.strip():
+    if not has_language_signal(text):
         return None
     known = ", ".join(lang["name"] for lang in LANGUAGES)
     client = get_client(api_key)

@@ -80,6 +80,20 @@ def test_detector_reply_is_matched_to_one_supported_language(reply, expected):
         assert backend.detect_language("some message", api_key="x") == expected
 
 
+@pytest.mark.parametrize(
+    "text, enough",
+    [("OK", False), ("123", False), ("...", False), ("👍", False), ("", False),
+     ("Hola", True), ("你好吗", True), ("yes", True)],
+)
+def test_short_messages_have_no_language_signal(text, enough):
+    assert backend.has_language_signal(text) is enough
+
+
+def test_short_messages_are_not_sent_to_the_detector(fake_client):
+    assert backend.detect_language("OK", api_key="x") is None
+    assert fake_client.request is None  # no API call made
+
+
 def test_auto_detected_prompt_follows_the_users_own_words():
     prompt = backend.build_system_prompt("English", auto_detected=True)
     assert "own questions and instructions" in prompt
